@@ -1,0 +1,30 @@
+<!-- Progressive enhancement: the large validation/tool module loads only on supported browsers. -->
+<script>
+  type ContextDocument = Document & { readonly modelContext?: { readonly registerTool?: unknown } };
+  let controller: AbortController | undefined;
+  const cleanup = (): void => {
+    controller?.abort();
+    controller = undefined;
+  };
+  const register = async (): Promise<void> => {
+    cleanup();
+    if (typeof (document as ContextDocument).modelContext?.registerTool !== "function") return;
+    const current = new AbortController();
+    controller = current;
+    try {
+      const { registerWebMCPTools } = await import("~/lib/webmcp/register");
+      if (!current.signal.aborted) await registerWebMCPTools(document, current);
+    } catch (error) {
+      current.abort();
+      console.warn("[webmcp] Tools unavailable", error);
+    }
+  };
+  document.addEventListener("astro:page-load", () => {
+    void register();
+  });
+  document.addEventListener("astro:before-swap", cleanup);
+  window.addEventListener("pagehide", cleanup);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) void register();
+  });
+</script>

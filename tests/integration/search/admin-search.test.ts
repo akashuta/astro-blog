@@ -85,4 +85,10 @@ describe("admin search (postgres FTS)", () => {
     const hits = await searchPostsMeta("   ");
     expect(hits).toEqual([]);
   });
+
+  it("applies the public candidate allowlist before limiting matches", async () => {
+    await setSearchVector("b", { title: "Different subject", tags: [], body: "An astro article." });
+    expect((await searchPostsMeta("astro", 1, "ru", ["b"])).map((hit) => hit.slug)).toEqual(["b"]);
+    expect(await searchPostsMeta("astro", 20, "ru", [])).toEqual([]);
+  });
 });

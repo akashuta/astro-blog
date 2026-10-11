@@ -89,8 +89,9 @@ export async function searchPostsMeta(
   query: string,
   limit = 20,
   lang: "ru" | "en" = "ru",
+  allowedSlugs?: readonly string[],
 ): Promise<readonly SearchHit[]> {
-  if (query.trim().length === 0) return [];
+  if (query.trim().length === 0 || allowedSlugs?.length === 0) return [];
   // TODO(cutover): file posts have no English vector and nothing writes one, so /en falls back to
   // the RU vector; hits without an EN twin are dropped by the caller's collection filter.
   // Removed once EN posts are indexed from the database (docs/specs/plans/2026-10-03-api-only-migration.md).
@@ -109,6 +110,7 @@ export async function searchPostsMeta(
            ts_rank_cd(${vector}, q.q_simple || q.q_russian) AS rank
     FROM posts_meta, q
     WHERE ${vector} @@ (q.q_simple || q.q_russian)
+      AND ${allowedSlugs ? inArray(postsMeta.slug, [...allowedSlugs]) : sql`true`}
     ORDER BY rank DESC
     LIMIT ${limit}
   `);

@@ -1,69 +1,56 @@
-import type { CollectionEntry } from "astro:content";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { searchNode } from "~/lib/search/pagefind-node";
 
-const { getCollectionMock, searchPostsMetaMock } = vi.hoisted(() => ({
-  getCollectionMock: vi.fn(),
-  searchPostsMetaMock: vi.fn(),
-}));
+const { searchMock } = vi.hoisted(() => ({ searchMock: vi.fn() }));
+vi.mock("~/lib/public-content/server", () => ({ publicContent: { search: searchMock } }));
 
-vi.mock("astro:content", () => ({ getCollection: getCollectionMock }));
-vi.mock("~/lib/db/repo/posts-meta", () => ({ searchPostsMeta: searchPostsMetaMock }));
-
-const fakeEntry = (id: string, title: string): CollectionEntry<"posts"> =>
-  ({
-    id,
-    slug: id,
-    body: "",
-    collection: "posts",
-    data: {
-      title,
-      description: `${title} description`,
-      pubDate: new Date("2026-01-01"),
-      tags: [],
-      draft: false,
-    },
-  }) as unknown as CollectionEntry<"posts">;
-
-describe("searchNode result URLs", () => {
+describe("public search page adapter", () => {
   beforeEach(() => {
-    getCollectionMock.mockResolvedValue([
-      fakeEntry("russian-result", "Russian result"),
-      fakeEntry("en/english-result", "English result"),
-    ]);
-    searchPostsMetaMock.mockReset();
+    searchMock.mockReset();
   });
 
-  it("returns a slash-canonical Russian article URL", async () => {
-    searchPostsMetaMock.mockResolvedValue([{ slug: "russian-result", rank: 1 }]);
+  it.each([
+    [
+      "ru",
+      "https://artka.dev/blog/mermaid-svg-playwright-build-time/",
+      "/blog/mermaid-svg-playwright-build-time/",
+    ],
+    [
+      "en",
+      "https://artka.dev/en/blog/mermaid-svg-playwright-build-time/",
+      "/en/blog/mermaid-svg-playwright-build-time/",
+    ],
+  ] as const)(
+    "keeps the canonical %s result path from the shared read model",
+    async (locale, canonicalUrl, url) => {
+      searchMock.mockResolvedValue({
+        articles: [{ canonicalUrl, title: "Mermaid SVG", description: "Build-time diagrams" }],
+      });
+      await expect(searchNode("Mermaid", locale)).resolves.toEqual([
+        { url, title: "Mermaid SVG", excerpt: "Build-time diagrams" },
+      ]);
+      expect(searchMock).toHaveBeenCalledWith({ query: "Mermaid", language: locale, limit: 20 });
+    },
+  );
 
-    await expect(searchNode("result", "ru")).resolves.toEqual([
-      {
-        url: "/blog/russian-result/",
-        title: "Russian result",
-        excerpt: "Russian result description",
-      },
-    ]);
+  it("does not search for a blank query", async () => {
+    await expect(searchNode("   ", "en")).resolves.toEqual([]);
+    expect(searchMock).not.toHaveBeenCalled();
   });
 
-  it("finds the English entry of a bare slug, searches the English vector and has no double locale", async () => {
-    // posts_meta is keyed by the bare slug for both languages.
-    searchPostsMetaMock.mockResolvedValue([{ slug: "english-result", rank: 1 }]);
-
-    await expect(searchNode("result", "en")).resolves.toEqual([
-      {
-        url: "/en/blog/english-result/",
-        title: "English result",
-        excerpt: "English result description",
-      },
-    ]);
-    expect(searchPostsMetaMock).toHaveBeenCalledWith("result", 20, "en");
+  it("does not pass an oversized URL query to the constrained content service", async () => {
+    await expect(searchNode("x".repeat(201), "en")).resolves.toEqual([]);
+    expect(searchMock).not.toHaveBeenCalled();
   });
 
-  it("does not answer an English search with the Russian entry of the same slug", async () => {
-    getCollectionMock.mockResolvedValue([fakeEntry("only-russian", "Only Russian")]);
-    searchPostsMetaMock.mockResolvedValue([{ slug: "only-russian", rank: 1 }]);
+  it("trims whitespace before applying the query limit", async () => {
+    searchMock.mockResolvedValue({ articles: [] });
+    await expect(searchNode(` ${"x".repeat(200)} `, "en")).resolves.toEqual([]);
+    expect(searchMock).toHaveBeenCalledWith({ query: "x".repeat(200), language: "en", limit: 20 });
+  });
 
-    await expect(searchNode("result", "en")).resolves.toEqual([]);
+  it("preserves a configured content-service failure instead of reporting no results", async () => {
+    searchMock.mockRejectedValue(new Error("content metadata unavailable"));
+    await expect(searchNode("Mermaid", "en")).rejects.toThrow("content metadata unavailable");
   });
 });

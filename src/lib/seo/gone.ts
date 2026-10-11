@@ -4,9 +4,9 @@ import { canonicalPath } from "./url-policy";
  * Addresses of content removed on purpose: the Claude Code course (landing,
  * lessons, their Markdown twins, RSS, certificate and OG cards), its project
  * page and the draft post that duplicated it. They answer 410 Gone, not 404
- * and not a redirect: 410 tells a search engine the removal is deliberate, so
- * the URLs leave the index faster, and no surviving page is a fair substitute
- * for a lesson.
+ * and not a redirect: 410 says the removal is deliberate, and no surviving
+ * page is a fair substitute for a lesson. Google treats 404 and 410 alike;
+ * indexed URLs are removed after recrawling and processing, with no fixed ETA.
  *
  * Pure, so the rule is unit-tested without a server; src/middleware.ts turns a
  * match into `goneResponse`.

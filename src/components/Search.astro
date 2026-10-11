@@ -16,17 +16,20 @@
  * from CommandPalette, or change its trigger to ⌘P).
  */
 import { getLocaleFromPath } from "~/lib/i18n/routing";
-import { t } from "~/i18n";
 
 const locale = getLocaleFromPath(Astro.url.pathname);
 const placeholder = locale === "en" ? "Search articles…" : "Поиск по статьям…";
-const empty = locale === "en" ? "No results" : "Ничего не найдено";
 const hint = locale === "en" ? "Type to search" : "Начните печатать";
 const escLabel = locale === "en" ? "Esc to close" : "Esc для закрытия";
 ---
 
 <div class="search" data-search aria-hidden="true">
-  <button type="button" class="search__backdrop" data-search-close aria-label="Close"></button>
+  <button
+    type="button"
+    class="search__backdrop"
+    data-search-close
+    tabindex="-1"
+    aria-label={locale === "en" ? "Close search" : "Закрыть поиск"}></button>
 
   <div
     class="search__panel"
@@ -56,10 +59,10 @@ const escLabel = locale === "en" ? "Esc to close" : "Esc для закрытия
       <p class="search__hint" data-search-hint>{hint}</p>
     </div>
 
-    <footer class="search__foot">
+    <div class="search__foot">
       <span class="search__lang" data-search-lang>{locale === "en" ? "EN" : "RU"}</span>
       <span class="search__hint-foot">{escLabel}</span>
-    </footer>
+    </div>
   </div>
 </div>
 
@@ -246,15 +249,23 @@ const escLabel = locale === "en" ? "Esc to close" : "Esc для закрытия
       options?: { filters?: Record<string, string | string[]> },
     ) => Promise<{ results: PagefindResult[] } | null>;
     init?: () => Promise<void>;
+    destroy?: () => void | Promise<void>;
   }
 
   let pagefindPromise: Promise<Pagefind | null> | null = null;
-  const loadPagefind = async (): Promise<Pagefind | null> => {
-    if (pagefindPromise) return pagefindPromise;
+  let pagefindLanguage: string | null = null;
+  const loadPagefind = async (language: string): Promise<Pagefind | null> => {
+    if (pagefindPromise && pagefindLanguage === language) return pagefindPromise;
+    const previous = pagefindPromise;
+    pagefindLanguage = language;
     pagefindPromise = (async () => {
       try {
         const url = "/pagefind/pagefind.js";
-        const mod = (await import(/* @vite-ignore */ url)) as Pagefind;
+        // Pagefind selects its language at initialization. Astro navigation
+        // keeps the module alive, so serialize a reset when the locale changes.
+        const loaded = previous ? await previous : null;
+        const mod = loaded ?? ((await import(/* @vite-ignore */ url)) as Pagefind);
+        if (loaded?.destroy) await loaded.destroy();
         if (mod.init) await mod.init();
         return mod;
       } catch (e) {
@@ -265,53 +276,136 @@ const escLabel = locale === "en" ? "Esc to close" : "Esc для закрытия
     return pagefindPromise;
   };
 
+  let cleanupSearch: (() => void) | undefined;
+
   function initSearch(): void {
     const root = document.querySelector<HTMLElement>("[data-search]");
     if (!root || root.dataset.bound === "1") return;
+    cleanupSearch?.();
     root.dataset.bound = "1";
 
     const input = root.querySelector<HTMLInputElement>("[data-search-input]");
     const list = root.querySelector<HTMLElement>("[data-search-results]");
     const hint = root.querySelector<HTMLElement>("[data-search-hint]");
+    const panel = root.querySelector<HTMLElement>(".search__panel");
     const langEl = root.querySelector<HTMLElement>("[data-search-lang]");
     const lang = (langEl?.textContent ?? "RU").toLowerCase();
+    const controller = new AbortController();
+    const { signal } = controller;
+    let lastFocus: HTMLElement | null = null;
+    let previousOverflow = "";
+    let focusFrame: number | undefined;
+    const background = new Map<HTMLElement, boolean>();
+    let active = -1;
+    let resultEls: HTMLElement[] = [];
+    let lastQuery = "";
+    let queryVersion = 0;
+
+    const showHint = (text: string): void => {
+      resultEls = [];
+      active = -1;
+      if (!list || !hint) return;
+      hint.textContent = text;
+      list.replaceChildren(hint);
+    };
+
+    const showSearchFallback = (query: string): void => {
+      showHint(
+        lang === "en"
+          ? "Search is temporarily unavailable here."
+          : "Поиск здесь временно недоступен.",
+      );
+      if (!hint) return;
+      const fallback = document.createElement("a");
+      const params = new URLSearchParams({ q: query.slice(0, 200) });
+      fallback.href = `${lang === "en" ? "/en" : ""}/search/?${params}`;
+      fallback.textContent =
+        lang === "en" ? "Search on the search page" : "Найти на странице поиска";
+      fallback.addEventListener("click", () => close(false), { signal });
+      hint.append(document.createTextNode(" "), fallback);
+    };
 
     const open = (): void => {
+      if (root.dataset.open === "true") return;
+      lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      previousOverflow = document.documentElement.style.overflow;
+      // Search is a direct body child. Inert siblings remove background
+      // controls from keyboard navigation and the accessibility tree.
+      Array.from(document.body.children).forEach((element) => {
+        if (
+          !(element instanceof HTMLElement) ||
+          element === root ||
+          element.matches("script, style")
+        )
+          return;
+        background.set(element, element.inert);
+        element.inert = true;
+      });
       root.dataset.open = "true";
       root.setAttribute("aria-hidden", "false");
       document.documentElement.style.overflow = "hidden";
-      requestAnimationFrame(() => input?.focus());
-      void loadPagefind();
+      focusFrame = requestAnimationFrame(() => {
+        if (!signal.aborted && root.isConnected && root.dataset.open === "true") input?.focus();
+      });
+      void loadPagefind(lang);
     };
 
-    const close = (): void => {
+    const close = (restoreFocus = true): void => {
+      if (root.dataset.open !== "true") return;
+      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+      queryVersion++;
       root.dataset.open = "false";
       root.setAttribute("aria-hidden", "true");
-      document.documentElement.style.overflow = "";
+      background.forEach((inert, element) => {
+        element.inert = inert;
+      });
+      background.clear();
+      document.documentElement.style.overflow = previousOverflow;
       if (input) input.value = "";
+      lastQuery = "";
+      showHint(lang === "en" ? "Type to search" : "Начните печатать");
+      if (restoreFocus && lastFocus?.isConnected) lastFocus.focus();
     };
 
     root.querySelectorAll<HTMLElement>("[data-search-close]").forEach((el) => {
-      el.addEventListener("click", close);
+      el.addEventListener("click", () => close(), { signal });
     });
 
-    document.addEventListener("keydown", (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toLowerCase().includes("mac");
-      const meta = isMac ? e.metaKey : e.ctrlKey;
-      if (meta && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        root.dataset.open === "true" ? close() : open();
-      } else if (e.key === "Escape" && root.dataset.open === "true") {
-        e.preventDefault();
-        close();
-      }
-    });
+    document.addEventListener(
+      "keydown",
+      (e: KeyboardEvent) => {
+        const isMac = navigator.platform.toLowerCase().includes("mac");
+        const meta = isMac ? e.metaKey : e.ctrlKey;
+        if (meta && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          root.dataset.open === "true" ? close() : open();
+        } else if (e.key === "Escape" && root.dataset.open === "true") {
+          e.preventDefault();
+          close();
+        } else if (e.key === "Tab" && root.dataset.open === "true" && panel) {
+          const focusables = Array.from(
+            panel.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((element) => element.getClientRects().length > 0);
+          const first = focusables[0];
+          const last = focusables[focusables.length - 1];
+          const focused = document.activeElement;
+          if (e.shiftKey && (focused === first || !panel.contains(focused))) {
+            e.preventDefault();
+            last?.focus();
+          } else if (!e.shiftKey && (focused === last || !panel.contains(focused))) {
+            e.preventDefault();
+            first?.focus();
+          }
+        }
+      },
+      { signal },
+    );
 
-    window.addEventListener("search:open", open);
-    window.addEventListener("search:close", close);
+    window.addEventListener("search:open", open, { signal });
+    window.addEventListener("search:close", () => close(), { signal });
 
-    let active = -1;
-    let resultEls: HTMLElement[] = [];
     const select = (idx: number): void => {
       resultEls.forEach((el) => el.removeAttribute("aria-selected"));
       active = (idx + resultEls.length) % Math.max(1, resultEls.length);
@@ -322,91 +416,112 @@ const escLabel = locale === "en" ? "Esc to close" : "Esc для закрытия
       }
     };
 
-    input?.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        select(active + 1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        select(active - 1);
-      } else if (e.key === "Enter" && active >= 0) {
-        e.preventDefault();
-        resultEls[active]?.click();
-      }
-    });
-
-    let lastQuery = "";
-    input?.addEventListener("input", async () => {
-      const q = (input.value || "").trim();
-      if (q === lastQuery) return;
-      lastQuery = q;
-
-      if (!list || !hint) return;
-      if (q.length < 2) {
-        list.innerHTML = "";
-        list.appendChild(hint);
-        hint.textContent = lang === "en" ? "Type to search" : "Начните печатать";
-        return;
-      }
-
-      const pagefind = await loadPagefind();
-      if (!pagefind) {
-        list.innerHTML = "";
-        list.appendChild(hint);
-        hint.textContent = "Pagefind not built. Run `pnpm exec pagefind` after build.";
-        return;
-      }
-
-      // Pagefind auto-scopes by <html lang>, so explicit locale filter is redundant.
-      const search = await pagefind.debouncedSearch(q);
-      if (!search) return;
-      const top = search.results.slice(0, 8);
-      const datas = await Promise.all(top.map((r) => r.data()));
-
-      list.innerHTML = "";
-      if (datas.length === 0) {
-        list.appendChild(hint);
-        hint.textContent = lang === "en" ? "No results" : "Ничего не найдено";
-        resultEls = [];
-        active = -1;
-        return;
-      }
-
-      resultEls = datas.map((d, i) => {
-        const a = document.createElement("a");
-        a.href = d.url;
-        a.className = "search__result";
-        a.setAttribute("role", "option");
-        if (i === 0) {
-          a.setAttribute("aria-selected", "true");
-          active = 0;
+    input?.addEventListener(
+      "keydown",
+      (e: KeyboardEvent) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          select(active + 1);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          select(active - 1);
+        } else if (e.key === "Enter" && active >= 0) {
+          e.preventDefault();
+          resultEls[active]?.click();
         }
-        const title = d.meta?.title ?? d.url;
-        const filters = d.filters ?? {};
-        const tag = filters.tag?.[0];
-        const date = filters.date?.[0];
+      },
+      { signal },
+    );
 
-        const meta: string[] = [];
-        if (date) meta.push(date);
-        if (tag) meta.push(tag);
+    input?.addEventListener(
+      "input",
+      async () => {
+        const q = (input.value || "").trim();
+        if (q === lastQuery) return;
+        lastQuery = q;
+        const version = ++queryVersion;
+        const isCurrent = (): boolean =>
+          !signal.aborted &&
+          root.isConnected &&
+          root.dataset.open === "true" &&
+          version === queryVersion;
 
-        a.innerHTML = `
+        if (!list || !hint) return;
+        if (q.length < 2) {
+          showHint(lang === "en" ? "Type to search" : "Начните печатать");
+          return;
+        }
+
+        const pagefind = await loadPagefind(lang);
+        if (!isCurrent()) return;
+        if (!pagefind) {
+          showSearchFallback(q);
+          return;
+        }
+
+        // loadPagefind initializes the index for the current document language.
+        const search = await pagefind.debouncedSearch(q);
+        if (!search || !isCurrent()) return;
+        const top = search.results.slice(0, 8);
+        const datas = await Promise.all(top.map((r) => r.data()));
+        if (!isCurrent()) return;
+
+        if (datas.length === 0) {
+          showHint(lang === "en" ? "No results" : "Ничего не найдено");
+          return;
+        }
+
+        resultEls = datas.map((d, i) => {
+          const a = document.createElement("a");
+          a.href = d.url;
+          a.className = "search__result";
+          a.setAttribute("role", "option");
+          if (i === 0) {
+            a.setAttribute("aria-selected", "true");
+            active = 0;
+          }
+          const title = d.meta?.title ?? d.url;
+          const filters = d.filters ?? {};
+          const tag = filters.tag?.[0];
+          const date = filters.date?.[0];
+
+          const meta: string[] = [];
+          if (date) meta.push(date);
+          if (tag) meta.push(tag);
+
+          a.innerHTML = `
           <p class="search__result-title">${title}</p>
           <p class="search__result-excerpt">${d.excerpt}</p>
           ${meta.length ? `<p class="search__result-meta">${meta.join(" · ")}</p>` : ""}
         `;
-        a.addEventListener("click", () => close());
-        return a;
-      });
-      // role="option" needs a listbox parent, and a listbox may only contain
-      // options — so the listbox exists only while there are results and the
-      // hint paragraph stays outside it (axe: aria-required-children/-parent).
-      const listbox = document.createElement("div");
-      listbox.setAttribute("role", "listbox");
-      resultEls.forEach((el) => listbox.appendChild(el));
-      list.appendChild(listbox);
-    });
+          a.addEventListener("click", () => close(false), { signal });
+          return a;
+        });
+        // role="option" needs a listbox parent, and a listbox may only contain
+        // options — so the listbox exists only while there are results and the
+        // hint paragraph stays outside it (axe: aria-required-children/-parent).
+        const listbox = document.createElement("div");
+        listbox.setAttribute("role", "listbox");
+        listbox.setAttribute("aria-label", lang === "en" ? "Search results" : "Результаты поиска");
+        resultEls.forEach((el) => listbox.appendChild(el));
+        list.replaceChildren(listbox);
+      },
+      { signal },
+    );
+
+    cleanupSearch = (): void => {
+      close(false);
+      queryVersion++;
+      controller.abort();
+      delete root.dataset.bound;
+      cleanupSearch = undefined;
+    };
+    document.addEventListener("astro:before-swap", () => cleanupSearch?.(), { signal });
   }
 
   document.addEventListener("astro:page-load", initSearch);
+  window.addEventListener("pagehide", () => cleanupSearch?.());
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) initSearch();
+  });
 </script>

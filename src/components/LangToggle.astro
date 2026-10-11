@@ -11,7 +11,7 @@ const targetLabel =
   targetLocale === "en"
     ? t(currentLocale, "lang.toggle.toEn")
     : t(currentLocale, "lang.toggle.toRu");
-const ariaLabel = t(currentLocale, "lang.toggle.ariaLabel");
+const ariaLabel = `${targetLabel} — ${t(currentLocale, "lang.toggle.ariaLabel")}`;
 const unavailable = t(currentLocale, "lang.unavailable");
 ---
 

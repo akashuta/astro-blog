@@ -53,8 +53,11 @@ export const SCHEMAS: Record<TranslateCollection, CollectionSchema> = {
       // means these are silently skipped for about/now/uses where they are absent.
       "heroEyebrow",
       "heroTitle",
+      "heroHighlight",
       "heroLede",
       "heroCta",
+      "sealPhrase",
+      "tickerItems",
       "latestLabel",
       "authorLabel",
       "authorBio",

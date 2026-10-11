@@ -1,12 +1,14 @@
 # Google Indexing Recovery Runbook
 
 Owner: site owner / DNS, proxy, deployment, and Google Search Console administrators
-Repository prerequisite: merge and deploy the Google indexing recovery changes after CI passes
+Repository prerequisite: merge and deploy the reviewed SEO changes after CI passes
 Status: owner-gated; external mutations in this runbook are **not completed by the PR**
 
 Record the operator, UTC timestamp, deployed commit, command output, and Search Console screenshots or export links alongside every completed checkbox. Stop if a redirect takes more than one hop, changes the intended path/query, points away from `https://artka.dev`, uses anything except `301` for GET/HEAD canonicalization, or uses anything except method-preserving `307`/`308` for slashless non-idempotent traffic.
 
-Astro middleware supplies a defense-in-depth host redirect and security headers for on-demand routes. The standalone adapter serves prerendered files before that middleware and hardcodes slash normalization as `301` before middleware for every method. It also serves `/llms-full.txt/` as a duplicate `200` and returns `500` for static RSS/feed/sitemap slash variants. Therefore the DNS/proxy rules below are mandatory for sitewide host normalization, method-preserving non-GET handling, and file-like canonicalization. Prerendered responses also need equivalent security headers configured at the edge if those headers are intended sitewide.
+Astro middleware supplies a defense-in-depth host redirect and security headers for on-demand routes. The standalone adapter serves prerendered files before that middleware, so sitewide host normalization and static-response security headers remain edge responsibilities. Verify file-like slash variants against the deployed commit rather than assuming the adapter's behavior: on 2026-10-11 the RU feed, sitemap and digest variants redirected correctly, while `/en/rss.xml/` and `/en/feed.json/` returned `404`.
+
+The Claude Code course, its project page and the duplicate draft post were removed deliberately. Their URLs must remain `410 Gone`; they are not indexing candidates and must not be restored or redirected to surviving content. `/privacy/` and `/en/privacy/` are current published pages and return `200`. Search Console exclusions include historical URLs: compare current indexable HTML separately before interpreting its counts as defects.
 
 ## 1. DNS, TLS, and edge canonicalization
 
@@ -32,7 +34,7 @@ Astro middleware supplies a defense-in-depth host redirect and security headers 
 
 - [ ] Configure the edge to use `307` or `308` when a slashless non-idempotent request needs its canonical slash. Do not use `301`/`302`, which may change the method or discard the body.
 - [ ] Configure the edge to collapse a slashless legacy alias directly to its final canonical rather than first adding a slash.
-- [ ] Configure direct permanent GET/HEAD redirects from file-like slash variants to the unslashed identity, including `/llms-full.txt/`, `/rss.xml/`, `/feed.json/`, `/sitemap-index.xml/`, and locale sitemap variants.
+- [ ] Verify direct permanent GET/HEAD redirects from file-like slash variants to the unslashed identity, including `/llms-full.txt/`, both locale RSS and JSON feeds, `/sitemap-index.xml/`, and locale sitemap variants. Correct any remaining edge rules after the reviewed application changes are deployed.
 
 ## 2. Deploy the verified application
 
@@ -56,14 +58,14 @@ Run these checks against production after caches have refreshed. `curl -I` sends
 
   Expected: home and slash-suffixed pages return `200`; `/blog` returns one `301` with `Location: /blog/` (or the equivalent absolute apex URL).
 
-- [ ] Historical lesson redirect:
+- [ ] Deliberately removed lesson addresses:
 
   ```bash
   curl -sS -I 'https://artka.dev/blog/02-context-and-cache'
   curl -sS -I 'https://artka.dev/blog/02-context-and-cache/'
   ```
 
-  Expected for both: one `301` directly to `https://artka.dev/courses/claude-code-guide/02-context-and-cache/`. The local standalone server takes two `301` hops for the slashless form because its normalization precedes the repository redirect; one-hop slashless behavior is therefore an edge-owned production acceptance gate.
+  Expected: the slashed URL returns `410` with `X-Robots-Tag: noindex` and no `Location`; the slashless URL may normalize once before the `410`. The course target also returns `410`. On 2026-10-11 three historical slashed aliases (`/blog/02-context-and-cache/`, `/blog/06-mcp/`, `/en/blog/06-mcp/`) returned `301` to a removed course URL, while their query variants answered direct `410`. This observed response inconsistency does not establish which serving or cache layer supplied the redirect. Establish its origin, then correct obsolete redirect rules or cached responses while retaining the application removal policy. Do not restore the course or request indexing for either address.
 
 - [ ] Method-preserving non-GET slash normalization:
 
@@ -99,23 +101,28 @@ Run these checks against production after caches have refreshed. `curl -I` sends
   curl -sS -D - -o /dev/null 'https://artka.dev/llms-full.txt/'
   curl -sS -I 'https://artka.dev/rss.xml/'
   curl -sS -D - -o /dev/null 'https://artka.dev/rss.xml/'
+  curl -sS -I 'https://artka.dev/en/rss.xml/'
+  curl -sS -D - -o /dev/null 'https://artka.dev/en/rss.xml/'
   curl -sS -I 'https://artka.dev/feed.json/'
   curl -sS -D - -o /dev/null 'https://artka.dev/feed.json/'
+  curl -sS -I 'https://artka.dev/en/feed.json/'
+  curl -sS -D - -o /dev/null 'https://artka.dev/en/feed.json/'
   curl -sS -I 'https://artka.dev/sitemap-index.xml/'
   curl -sS -D - -o /dev/null 'https://artka.dev/sitemap-index.xml/'
   curl -sS -I 'https://artka.dev/sitemap-ru.xml/'
   curl -sS -D - -o /dev/null 'https://artka.dev/sitemap-ru.xml/'
   ```
 
-  Expected: each command returns one `301` directly to the corresponding unslashed apex HTTPS URL. No internal producer emits these variants. Do not accept the standalone adapter's unproxied behavior (`200` duplicate for `/llms-full.txt/`, `500` for the static variants) as production completion.
+  Expected: each command returns one `301` directly to the corresponding unslashed apex HTTPS URL. No internal producer emits these variants. Record the actual deployed response chain; a duplicate `200`, an error, or an extra hop needs investigation rather than assuming an older adapter result still applies.
 
-- [ ] Deliberate removal:
+- [ ] Current privacy pages:
 
   ```bash
   curl -sS -I 'https://artka.dev/privacy/'
+  curl -sS -I 'https://artka.dev/en/privacy/'
   ```
 
-  Expected: a real `404`, with no redirect to the homepage or blog.
+  Expected: `200`, self-referencing canonical and matching locale alternates. These pages appear in the current sitemaps; do not delete them to satisfy an obsolete removal check.
 
 - [ ] Inspect representative page source for one canonical, matching Open Graph URL, language-correct hreflang links, and the expected robots directive:
 
@@ -151,12 +158,11 @@ These are owner-approved Search Console mutations; do not perform them from a PR
   - Home: `https://artka.dev/`
   - RU post: `https://artka.dev/blog/json-ld-graph-astro/`
   - EN post: `https://artka.dev/en/blog/json-ld-graph-astro/`
-  - Course: `https://artka.dev/courses/claude-code-guide/02-context-and-cache/`
-  - Tag: `https://artka.dev/tags/astro/`
+  - Author: `https://artka.dev/about/`
   - Project: `https://artka.dev/projects/astro-blog/`
 
-- [ ] Start validation for the affected Search Console buckets: Not found (404), Page with redirect, Alternate page with proper canonical, Duplicate without user-selected canonical, and Duplicate where Google chose a different canonical.
-- [ ] Record each validation start date and affected-page count. Do not request indexing for `noindex` utilities or deliberate 404s.
+- [ ] Separate historical removed URLs from current indexable URLs in the affected Search Console buckets before starting any validation. A deliberate `410`, a `noindex` utility, or a tag archive absent from the sitemap is an expected exclusion.
+- [ ] Start validation only for verified repaired defects, then record each validation start date and affected-page count. Do not request indexing for removed course URLs, Markdown twins, `noindex` tags/search/login, or deliberate 404s.
 
 ## 6. Track recovery for 4–8 weeks
 

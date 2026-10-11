@@ -15,12 +15,15 @@ interface TestWindow extends Window {
   readonly webmcpTest: { readonly tools: Map<string, WebMCPTool>; registrations: number };
 }
 interface NativeContext {
-  readonly getTools: () => Promise<readonly WebMCPTool[]>;
+  readonly getTools: () => Promise<readonly NativeTool[]>;
   readonly executeTool: (
-    tool: WebMCPTool,
+    tool: NativeTool,
     args: string | Record<string, unknown>,
   ) => Promise<string>;
 }
+type NativeTool = Omit<WebMCPTool, "execute" | "inputSchema"> & {
+  readonly inputSchema: string | Record<string, unknown>;
+};
 type NativeDocument = Document & { readonly modelContext?: NativeContext };
 const mockAPI = async (page: Page) => {
   await page.addInitScript(() => {
@@ -244,16 +247,26 @@ it("discovers and executes RU/EN tools through native browser WebMCP when availa
         ),
       );
     for (const language of ["ru", "en"]) {
-      await page.waitForFunction(async (language) => {
-        const tools = await (document as NativeDocument).modelContext?.getTools();
-        return (
-          tools?.length === 4 &&
-          tools.every((tool) => {
-            const properties = tool.inputSchema.properties as Record<string, { default?: unknown }>;
-            return properties.language?.default === language;
-          })
-        );
-      }, language);
+      // Older native consumers return JSON text schemas; later Chrome returns objects.
+      // Poll the awaited result outside the page, so readiness is actually checked.
+      await expect
+        .poll(() =>
+          page.evaluate(async (language) => {
+            const tools = await (document as NativeDocument).modelContext?.getTools();
+            return (
+              tools?.length === 4 &&
+              tools.every((tool) => {
+                const schema =
+                  typeof tool.inputSchema === "string"
+                    ? (JSON.parse(tool.inputSchema) as Record<string, unknown>)
+                    : tool.inputSchema;
+                const properties = schema.properties as Record<string, { default?: unknown }>;
+                return properties.language?.default === language;
+              })
+            );
+          }, language),
+        )
+        .toBe(true);
       const search = await invoke("search_articles", { query: "Claude", limit: 1 });
       expect(search.language).toBe(language);
       expect(search.articles).toHaveLength(1);

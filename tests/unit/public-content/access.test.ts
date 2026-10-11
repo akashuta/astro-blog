@@ -76,6 +76,25 @@ describe("public content access", () => {
     expect(result.articles[0]?.markdownUrl).toBe("https://artka.dev/en/blog/one.md");
     expect((await access.search({ query: "English", language: "ru" })).articles).toEqual([]);
   });
+  it("supplements incomplete nonempty search vectors from current prose without duplicates", async () => {
+    const { access, listPosts, searchSlugs } = fixture();
+    listPosts.mockResolvedValue([
+      post("ranked", { title: "Database result" }),
+      post("literal", { title: "Mermaid hardware" }),
+      post("hidden", { title: "Mermaid hardware" }),
+      post("draft", { title: "Mermaid hardware", draft: true }),
+      post("en/literal", { title: "Mermaid hardware" }),
+    ]);
+    searchSlugs.mockResolvedValue(["ranked", "ranked", "hidden", "missing"]);
+    const result = await access.search({ query: "Mermaid hardware", limit: 1 });
+    expect(result.searchMode).toBe("full_text_with_literal_fallback");
+    expect(result.total).toBe(2);
+    expect(result.articles.map((article) => article.slug)).toEqual(["ranked"]);
+    expect(result.nextOffset).toBe(1);
+    const next = await access.search({ query: "Mermaid hardware", limit: 1, offset: 1 });
+    expect(next.articles.map((article) => article.slug)).toEqual(["literal"]);
+    expect(next.nextOffset).toBeNull();
+  });
   it("returns clean prose, dates and explicit bounded continuation", async () => {
     const { access, listPosts } = fixture();
     listPosts.mockResolvedValue([

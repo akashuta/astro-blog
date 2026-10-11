@@ -9,10 +9,10 @@ heroCta: Все статьи →
 sealPhrase: Записки из продакшна · с 2018 · Анкара
 tickerItems: |-
   Новое · 8 страниц из 185
-  Claude Code изнутри · 18 мин
-  Eval-харнесс раньше агента
-  MCP-сервер на 688 страниц
-  Kafka outbox, версия что выжила
+  Видео с Claude Code: от брифа до рендера
+  12 правил для CLAUDE.md
+  Mermaid в Astro: SVG при сборке
+  Почта на своём домене: Mailu и Dokploy
 latestLabel: Последние публикации
 authorLabel: Автор
 authorBio: >-

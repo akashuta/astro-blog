@@ -44,7 +44,14 @@ const SITE_ENTRY_PAGE = new RegExp(`^/(?:en/)?(${SITE_ENTRY_PAGES.join("|")})/$`
  * paired static page is left out of this list. Every other path has to prove
  * its twin from the content collections below, or gets `false`.
  */
-export const PAIRED_STATIC_ROUTES = ["/", "/blog/", "/search/", "/tags/", "/projects/"] as const;
+export const PAIRED_STATIC_ROUTES = [
+  "/",
+  "/blog/",
+  "/search/",
+  "/tags/",
+  "/projects/",
+  "/webmcp/",
+] as const;
 const isPairedStaticRoute = (ruPath: string): boolean =>
   (PAIRED_STATIC_ROUTES as readonly string[]).includes(ruPath);
 

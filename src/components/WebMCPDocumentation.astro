@@ -1,0 +1,106 @@
+---
+import "~/styles/content.css";
+import BaseLayout from "~/layouts/BaseLayout.astro";
+import { getLocaleFromPath } from "~/lib/i18n/routing";
+import { createWebMCPTools } from "~/lib/webmcp/register";
+
+const language = getLocaleFromPath(Astro.url.pathname);
+const en = language === "en";
+const tools = createWebMCPTools(language);
+const title = en
+  ? "Browser tools: articles and meeting link"
+  : "Инструменты браузера: статьи и ссылка на встречу";
+const description = en
+  ? "Public WebMCP tool names, argument schemas, capabilities and browser support limits on artka.dev."
+  : "Публичные имена, схемы аргументов, возможности и ограничения WebMCP на artka.dev.";
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  noindex={true}
+  fullWidth={true}
+  noSidebar={true}
+>
+  <article class="prose">
+    <h1>{title}</h1>
+    <p>
+      {
+        en
+          ? "Compatible browser agents can discover these tools after visiting a public page. They use document.modelContext.registerTool. Reading this documentation does not enable the browser API or grant an agent permission to execute tools."
+          : "Совместимые браузерные агенты могут обнаружить эти инструменты после открытия публичной страницы. Используется document.modelContext.registerTool. Чтение документации не включает API браузера и не даёт агенту разрешения выполнять инструменты."
+      }
+    </p>
+    <p>
+      {
+        en
+          ? "WebMCP is a browser API, not a remote MCP server. An absent navigator.modelContext does not establish whether the document API is supported. If document.modelContext is unavailable, ordinary article search and booking links still work. No browser settings or extensions are changed by the site."
+          : "WebMCP — API браузера, а не удалённый MCP-сервер. Отсутствие navigator.modelContext не показывает поддержку API документа. Если document.modelContext недоступен, обычный поиск статей и ссылки записи на встречу продолжают работать. Сайт не меняет настройки браузера и не устанавливает расширения."
+      }
+    </p>
+    <p>
+      <a href="/webmcp.json" data-astro-prefetch="false"
+        >{en ? "Machine-readable tool schemas" : "Схемы инструментов в JSON"}</a
+      >
+      {
+        en
+          ? " are generated from the same definitions as registration."
+          : " генерируются из тех же определений, что и регистрация."
+      }
+    </p>
+    <h2>{en ? "Articles and topics" : "Статьи и темы"}</h2>
+    <p>
+      {
+        en
+          ? "Search, read and topics expose public published articles only. Draft, future, removed and hidden content is excluded. RU/EN defaults to the current page. Search returns canonical URLs and bounded metadata; reading returns clean prose with explicit continuation and a Markdown link for code examples. Responses are read-only JSON over HTTP, not an MCP transport."
+          : "Поиск, чтение и темы доступны только для опубликованных публичных статей. Черновики, будущие, удалённые и скрытые материалы исключены. Язык RU/EN по умолчанию соответствует странице. Поиск возвращает канонические URL и ограниченные метаданные; чтение — чистый текст с явным продолжением и ссылкой на Markdown с примерами кода. Ответы HTTP в JSON доступны только для чтения и не являются MCP-транспортом."
+      }
+    </p>
+    <h2>{en ? "Meeting handoff" : "Переход к записи на встречу"}</h2>
+    <p>
+      {
+        en
+          ? "get_meeting_booking_link returns the public Cal.com link and the localized contact page. It does not check availability, reserve a time, open the scheduler or create a meeting. bookingCreated is false. The visitor chooses a slot, enters details and confirms in the scheduler."
+          : "get_meeting_booking_link возвращает публичную ссылку Cal.com и страницу контактов на нужном языке. Инструмент не проверяет доступность, не резервирует время, не открывает календарь и не создаёт встречу. bookingCreated равен false. Посетитель сам выбирает время, вводит данные и подтверждает запись в календаре."
+      }
+      <a href={en ? "/en/contact/#book" : "/contact/#book"}
+        >{en ? " Book a meeting" : " Назначить встречу"}</a
+      >
+    </p>
+    <h2>{en ? "Exact argument schemas" : "Точные схемы аргументов"}</h2>
+    <p>
+      {
+        en
+          ? "Unknown arguments are rejected. Each schema below uses the current page language as its default."
+          : "Неизвестные аргументы отклоняются. Каждая схема ниже использует язык текущей страницы по умолчанию."
+      }
+    </p>
+    {
+      tools.map((tool) => (
+        <section aria-labelledby={`tool-${tool.name}`}>
+          <h3 id={`tool-${tool.name}`}>
+            <code>{tool.name}</code>
+          </h3>
+          <pre>
+            <code>{JSON.stringify(tool.inputSchema, null, 2)}</code>
+          </pre>
+        </section>
+      ))
+    }
+    <p>
+      <a href="https://developer.chrome.com/docs/ai/webmcp/imperative-api"
+        >{en ? "Current Chrome API documentation" : "Текущая документация API Chrome"}</a
+      >
+    </p>
+  </article>
+  <style>
+    .prose {
+      max-width: 800px;
+      margin-inline: auto;
+    }
+    pre {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+  </style>
+</BaseLayout>

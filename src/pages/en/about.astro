@@ -2,6 +2,7 @@
 import "~/styles/content.css";
 import BaseLayout from "~/layouts/BaseLayout.astro";
 import Breadcrumbs from "~/components/Breadcrumbs.astro";
+import Avatar from "~/components/Avatar.astro";
 import { getEntry, render } from "astro:content";
 import { t } from "~/i18n";
 import { getLocaleFromPath } from "~/lib/i18n/routing";
@@ -58,6 +59,7 @@ const nodes = buildLandingNodes({
   <article class="prose">
     <Breadcrumbs items={breadcrumbItems} ariaLabel={t(locale, "breadcrumbs.aria")} />
     <h1>{entry.data.title}</h1>
+    <Avatar size="lg" />
     <Content />
   </article>
   <style>

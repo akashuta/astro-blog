@@ -73,26 +73,33 @@ export const createPublicContentAccess = (deps: PublicContentDependencies) => {
           posts.map((post) => bareSlug(post.id)),
         )
       : null;
-    // Existing file-backed EN posts can lack an EN vector. Explicit literal fallback
-    // also lets a public preview without a database search its published content.
-    const fullText = ranked !== null && ranked.length > 0;
+    // File-backed vectors can be absent or lag behind current prose. Keep ranked hits
+    // first, then supplement from the same published/visible candidate set.
+    const rankedPosts = [...new Set(ranked ?? [])].flatMap((slug) => {
+      const post = posts.find((post) => bareSlug(post.id) === slug);
+      return post ? [post] : [];
+    });
+    const rankedIds = new Set(rankedPosts.map((post) => post.id));
     const terms = input.query.toLocaleLowerCase(input.language).split(/\s+/).filter(Boolean);
-    const matches = fullText
-      ? ranked.flatMap((slug) => {
-          const post = posts.find((post) => bareSlug(post.id) === slug);
-          return post ? [post] : [];
-        })
-      : posts.filter((post) => {
-          const text =
-            `${post.data.title} ${post.data.description} ${post.data.tags.join(" ")} ${textOf(post)}`.toLocaleLowerCase(
-              input.language,
-            );
-          return terms.every((term) => text.includes(term));
-        });
+    const literalPosts = posts.filter((post) => {
+      if (rankedIds.has(post.id)) return false;
+      const text =
+        `${post.data.title} ${post.data.description} ${post.data.tags.join(" ")} ${textOf(post)}`.toLocaleLowerCase(
+          input.language,
+        );
+      return terms.every((term) => text.includes(term));
+    });
+    const matches = [...rankedPosts, ...literalPosts];
     const selected = matches.slice(input.offset, input.offset + input.limit);
     return {
       language: input.language,
-      searchMode: input.query ? (fullText ? "full_text" : "literal") : "latest",
+      searchMode: !input.query
+        ? "latest"
+        : rankedPosts.length === 0
+          ? "literal"
+          : literalPosts.length > 0
+            ? "full_text_with_literal_fallback"
+            : "full_text",
       total: matches.length,
       articles: selected.map((post) => metadata(post, input.language)),
       nextOffset:

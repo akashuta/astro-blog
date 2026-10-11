@@ -56,7 +56,6 @@ export interface CreativeWorkInput {
   readonly canonical: string;
   readonly name: string;
   readonly description: string;
-  readonly role: string;
   readonly datePublished: Date;
   readonly dateModified?: Date;
   readonly keywords: ReadonlyArray<string>;
@@ -73,7 +72,6 @@ export const buildCreativeWorkNode = (input: CreativeWorkInput) => {
     inLanguage: inLang(input.locale),
     author: { "@id": graphIds.person },
     creator: { "@id": graphIds.person },
-    contributor: input.role,
     // Reference the page's own WebPage/ItemPage node, the same way
     // BlogPosting does, so CreativeWork ↔ WebPage ↔ BreadcrumbList resolve
     // inside one graph instead of the work hanging on its own.

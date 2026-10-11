@@ -9,10 +9,10 @@ heroCta: All articles →
 sealPhrase: Notes from production · since 2018 · Ankara
 tickerItems: |-
   New · 8 pages out of 185
-  Claude Code from the inside · 18 min
-  The eval harness comes first
-  An MCP server across 688 pages
-  Kafka outbox, the version that held
+  Video with Claude Code: from brief to render
+  12 rules for CLAUDE.md
+  Mermaid in Astro: build-time SVG
+  Custom-domain email: Mailu and Dokploy
 latestLabel: Latest publications
 authorLabel: Author
 authorBio: >-
@@ -23,6 +23,6 @@ metaTitle: artka.dev — Artyom Kashuta | AI agents and backend
 metaDescription: >-
   artka.dev — the personal technical blog of Artyom Kashuta. Notes on Claude Code, LLM agents, RAG pipelines, and production backend.
 lang: en
-sourceHash: 57835f8999ab2b5a93886a1011e7525ad7dcae9d20b6ea21f04f8b7cd02ff0c5
-manuallyEdited: false
+sourceHash: e5bdaea184663ef2eb41a02385d7d17606a49c99263a317bf1052b82b8343e83
+manuallyEdited: true
 ---

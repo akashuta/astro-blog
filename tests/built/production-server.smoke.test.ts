@@ -124,7 +124,7 @@ const expectCanonicalHomeLinks = (
 };
 
 describe("production standalone server", () => {
-  it("serves public SEO routes and records unresolved adapter file-variant diagnostics", async () => {
+  it("serves public SEO routes and normalizes known public file variants", async () => {
     const server = await startProductionServer({
       host: "127.0.0.1",
       siteUrl: "https://artka.dev",
@@ -308,24 +308,29 @@ describe("production standalone server", () => {
         })),
       );
 
-      // Since Astro 6, endpoints whose route ends in a file extension are only served
-      // without a trailing slash regardless of `trailingSlash`; the slash variant is a
-      // plain 404 (no redirect). Pin that so a regression to 500 (Astro 5 behaviour)
-      // or an accidental duplicate-content 200 is caught.
+      // Known public files have an explicit permanent redirect to their file identity.
+      // Both GET and HEAD must avoid a duplicate 200, an error, or an extra slash hop.
       expect(fileVariantResults).toEqual(
         [
-          ["/llms-full.txt/", "/llms-full.txt", 404],
-          ["/rss.xml/", "/rss.xml", 404],
-          ["/feed.json/", "/feed.json", 404],
-          ["/sitemap-index.xml/", "/sitemap-index.xml", 404],
-          ["/sitemap-ru.xml/", "/sitemap-ru.xml", 404],
-        ].map(([variant, canonical, adapterStatus]) => ({
+          ["/llms-full.txt/", "/llms-full.txt"],
+          ["/rss.xml/", "/rss.xml"],
+          ["/feed.json/", "/feed.json"],
+          ["/sitemap-index.xml/", "/sitemap-index.xml"],
+          ["/sitemap-ru.xml/", "/sitemap-ru.xml"],
+        ].map(([variant, canonical]) => ({
           variant,
           canonical,
-          get: { status: adapterStatus, location: null },
-          head: { status: adapterStatus, location: null },
+          get: { status: 301, location: canonical },
+          head: { status: 301, location: canonical },
         })),
       );
+      // The allowlist must not turn a misspelled file into a redirect to another 404.
+      for (const method of ["GET", "HEAD"]) {
+        expect(await redirect(server.origin, "/__missing-utility__.xml/", { method })).toEqual({
+          status: 404,
+          location: null,
+        });
+      }
 
       expectCanonicalHomeLinks(ruHome, {
         blog: "/blog/",

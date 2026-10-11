@@ -130,6 +130,21 @@ export const buildLlmsTxt = (input: LlmsInput): string => {
     link("Projects", canonicalUrl("/projects/"), "portfolio with role and outcomes"),
     link("Blog index (RU)", canonicalUrl("/blog/"), "all articles, source of truth"),
     link("Blog index (EN)", canonicalUrl("/en/blog/"), "English translations"),
+    link(
+      "WebMCP browser tools (RU)",
+      canonicalUrl("/webmcp/"),
+      "browser API support limits and tool documentation; not a remote MCP server",
+    ),
+    link(
+      "WebMCP browser tools (EN)",
+      canonicalUrl("/en/webmcp/"),
+      "browser API support limits and tool documentation; not a remote MCP server",
+    ),
+    link(
+      "WebMCP tool schemas",
+      canonicalUrl("/webmcp.json"),
+      "readable browser tool definitions; this file does not execute tools",
+    ),
     "",
     "## Posts",
     "",
@@ -151,7 +166,7 @@ export const buildLlmsTxt = (input: LlmsInput): string => {
     link(
       "Full digest for LLMs",
       canonicalUrl("/llms-full.txt"),
-      "author profile plus full RU post bodies (EN full or excerpts, see its header)",
+      "author profile plus post bodies, excerpts, or Markdown pointers (see its header)",
     ),
     "",
   ].join("\n");
@@ -178,16 +193,25 @@ const excerptPost = (locale: LlmsLocale, post: LlmsPost): string =>
     `URL: ${postUrl(locale, post.slug)}`,
     `Markdown: ${postMarkdownUrl(locale, post.slug)}`,
     `Published: ${dateOnly(post.pubDate)}`,
+    `Language: ${locale === "ru" ? "ru-RU" : "en-US"}`,
     `Summary: ${oneLine(post.description)}`,
     `Excerpt: ${extractArticleBody(post.body, 80).text}`,
+    "",
+  ].join("\n");
+
+const pointerPost = (locale: LlmsLocale, post: LlmsPost): string =>
+  [
+    `## ${post.title}`,
+    `URL: ${postUrl(locale, post.slug)}`,
+    `Markdown: ${postMarkdownUrl(locale, post.slug)}`,
     "",
   ].join("\n");
 
 export interface LlmsFullOutput {
   readonly text: string;
   readonly bytes: number;
-  /** "full" when both locales fit the budget; "en-excerpts" when EN was trimmed. */
-  readonly mode: "full" | "en-excerpts";
+  /** Every mode preserves all article URLs; the header states which bodies were omitted. */
+  readonly mode: "full" | "en-excerpts" | "excerpts" | "index";
 }
 
 const byteLength = (text: string): number => Buffer.byteLength(text, "utf8");
@@ -213,9 +237,12 @@ export const buildLlmsFull = (
       "This file is a retrieval artifact for language models and agents, not a page",
       "meant for search indexes (it is served with `X-Robots-Tag: noindex`). It repeats",
       "content that lives on canonical HTML pages; cite those pages, not this file.",
-      mode === "full"
-        ? `Contents: full Markdown bodies of every Russian post and every English translation (budget ${Math.round(budgetBytes / 1024)} KB).`
-        : `Contents: full Markdown bodies of every Russian post (source of truth) and 80-word excerpts of the English translations — full EN bodies would exceed the ${Math.round(budgetBytes / 1024)} KB budget; fetch the per-post \`.md\` URLs for full English text.`,
+      {
+        full: `Contents: full Markdown bodies of every Russian post and every English translation (budget ${Math.round(budgetBytes / 1024)} KB).`,
+        "en-excerpts": `Contents: full Markdown bodies of every Russian post (source of truth) and 80-word excerpts of the English translations; fetch the per-post \`.md\` URLs for full English text (budget ${Math.round(budgetBytes / 1024)} KB).`,
+        excerpts: `Contents: 80-word excerpts of both languages; full bodies would exceed the ${Math.round(budgetBytes / 1024)} KB budget. Fetch the per-post \`.md\` URLs for full text.`,
+        index: `Contents: article URLs only; bodies and excerpts are omitted to stay within the ${Math.round(budgetBytes / 1024)} KB budget. Fetch the per-post \`.md\` URLs for full text.`,
+      }[mode],
       "",
       "## Author",
       `Name: ${person.name}`,
@@ -247,16 +274,40 @@ export const buildLlmsFull = (
       "",
     ].join("\n");
 
-  const ruBody = input.ruPosts.map((p) => fullPost("ru", p)).join("\n");
   const enHeader = "\n---\n\n# Posts (English translations)\n\n";
-  const enFull = input.enPosts.map((p) => fullPost("en", p)).join("\n");
+  const underBudget = (
+    mode: LlmsFullOutput["mode"],
+    ruBody: string,
+    enBody: string,
+  ): LlmsFullOutput | null => {
+    const text = header(mode) + ruBody + enHeader + enBody;
+    const bytes = byteLength(text);
+    return bytes <= budgetBytes ? { text, bytes, mode } : null;
+  };
 
-  const fullText = header("full") + ruBody + enHeader + enFull;
-  const fullBytes = byteLength(fullText);
-  if (fullBytes <= budgetBytes) {
-    return { text: fullText, bytes: fullBytes, mode: "full" };
-  }
+  const ruFull = input.ruPosts.map((p) => fullPost("ru", p)).join("\n");
+  const enFull = input.enPosts.map((p) => fullPost("en", p)).join("\n");
+  const full = underBudget("full", ruFull, enFull);
+  if (full) return full;
+
   const enExcerpts = input.enPosts.map((p) => excerptPost("en", p)).join("\n");
-  const trimmed = header("en-excerpts") + ruBody + enHeader + enExcerpts;
-  return { text: trimmed, bytes: byteLength(trimmed), mode: "en-excerpts" };
+  const englishTrimmed = underBudget("en-excerpts", ruFull, enExcerpts);
+  if (englishTrimmed) return englishTrimmed;
+
+  const ruExcerpts = input.ruPosts.map((p) => excerptPost("ru", p)).join("\n");
+  const excerpts = underBudget("excerpts", ruExcerpts, enExcerpts);
+  if (excerpts) return excerpts;
+
+  // A long unbroken token can exceed an 80-word excerpt's byte budget. Keep
+  // every HTML/Markdown pointer, rather than cutting a URL or silently losing
+  // an article. If even the index cannot fit, make that capacity error visible.
+  const index = underBudget(
+    "index",
+    input.ruPosts.map((p) => pointerPost("ru", p)).join("\n"),
+    input.enPosts.map((p) => pointerPost("en", p)).join("\n"),
+  );
+  if (index) return index;
+  throw new RangeError(
+    `LLM digest budget (${budgetBytes} bytes) is too small to list every article`,
+  );
 };

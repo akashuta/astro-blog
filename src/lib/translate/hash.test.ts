@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFrontmatter, serializeFrontmatter } from "../content/frontmatter";
+import { collectStringFields, SCHEMAS, splitFrontmatter } from "./fields";
 import { contentHash } from "./hash";
 
 const post = (frontmatter: string, body = "## Раздел\n\nТекст статьи.\n"): string =>
@@ -58,6 +59,18 @@ describe("contentHash: an EN twin goes stale only when translated content change
       contentHash("projects", project("Иной итог")),
     );
   });
+
+  it.each(["heroHighlight", "sealPhrase", "tickerItems"])(
+    "a home %s edit is submitted for translation and changes its source hash",
+    (field) => {
+      const before = post(`title: "Главная"\n${field}: "Текст до изменения"`, "");
+      const after = post(`title: "Главная"\n${field}: "Текст после изменения"`, "");
+      const { rawData } = splitFrontmatter(after);
+
+      expect(collectStringFields(rawData, SCHEMAS.site)[field]).toBe("Текст после изменения");
+      expect(contentHash("site", after)).not.toBe(contentHash("site", before));
+    },
+  );
 
   it("keeps field boundaries: moving text between title and description is a change", () => {
     expect(contentHash("posts", post('title: "ab"\ndescription: "c"'))).not.toBe(

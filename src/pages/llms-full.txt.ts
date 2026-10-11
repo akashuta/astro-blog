@@ -1,8 +1,9 @@
 /**
  * /llms-full.txt — batch retrieval artifact: author profile + full Markdown
- * bodies of every visible post (RU always full; EN full when the whole file
- * fits the 200 KB budget from the LLM-citable design spec, otherwise EN
- * excerpts — the file header states which mode was used).
+ * bodies of every visible post when they fit the 200 KB budget from the
+ * LLM-citable design spec. It falls back to EN excerpts, then both-language
+ * excerpts or a URL index. Every article keeps its HTML and Markdown pointers;
+ * the file header states which content was omitted.
  *
  * `X-Robots-Tag: noindex` stays on: this duplicates canonical HTML pages and
  * must not compete with them in web search. It is still fetchable by every

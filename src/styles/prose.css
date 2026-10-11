@@ -294,7 +294,7 @@
 
 /* The pair follows the site theme (data-theme), not the OS: the toggle can
    disagree with prefers-color-scheme. */
-.prose .diagram__img--dark {
+.prose .diagram__canvas .diagram__img--dark {
   display: none;
 }
 

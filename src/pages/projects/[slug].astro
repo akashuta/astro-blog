@@ -45,7 +45,6 @@ const creativeWorkNode: GraphNode = buildCreativeWorkNode({
   canonical,
   name: entry.data.title,
   description: entry.data.description,
-  role: entry.data.role,
   datePublished: entry.data.pubDate,
   ...(entry.data.updatedDate ? { dateModified: entry.data.updatedDate } : {}),
   keywords: entry.data.stack,

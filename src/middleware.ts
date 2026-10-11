@@ -5,6 +5,7 @@ import { CAL_ORIGIN } from "~/lib/booking/config";
 import { i18nRootRedirect } from "~/lib/i18n/middleware";
 import { logger } from "~/lib/logger";
 import { goneResponse, isGonePath } from "~/lib/seo/gone";
+import { canonicalPath } from "~/lib/seo/url-policy";
 
 const canonicalHostNormalization = defineMiddleware((context, next) => {
   if (context.isPrerendered) return next();
@@ -12,9 +13,36 @@ const canonicalHostNormalization = defineMiddleware((context, next) => {
   return redirect ? context.redirect(redirect.toString(), 301) : next();
 });
 
+const PUBLIC_FILE_PATHS: ReadonlySet<string> = new Set([
+  "/robots.txt",
+  "/rss.xml",
+  "/en/rss.xml",
+  "/feed.json",
+  "/en/feed.json",
+  "/sitemap-index.xml",
+  "/sitemap-ru.xml",
+  "/sitemap-en.xml",
+  "/llms.txt",
+  "/llms-full.txt",
+  "/webmcp.json",
+]);
+
+/** A slash on a known public file is a variant of that file, not a missing page. */
+const publicFileNormalization = defineMiddleware((context, next) => {
+  if (
+    context.isPrerendered ||
+    (context.request.method !== "GET" && context.request.method !== "HEAD")
+  ) {
+    return next();
+  }
+  const path = canonicalPath(context.url.pathname);
+  if (path === context.url.pathname || !PUBLIC_FILE_PATHS.has(path)) return next();
+  return context.redirect(`${path}${context.url.search}`, 301);
+});
+
 /**
  * Removed content (the Claude Code course, its project page, the draft post
- * that duplicated it) answers 410 Gone so search engines drop it quickly; see
+ * that duplicated it) answers 410 Gone to mark its deliberate removal; see
  * `isGonePath`. None of those addresses has a route any more, so they reach
  * this on-demand chain; a prerendered page that ever reuses one of them wins.
  *
@@ -127,6 +155,7 @@ export const onRequest = sequence(
   securityHeaders,
   htmlCharset,
   canonicalHostNormalization,
+  publicFileNormalization,
   removedContent,
   i18nRootRedirect,
   authContext,

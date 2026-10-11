@@ -5,6 +5,11 @@ This is a browser API, **not a remote MCP endpoint**. An agent must visit the si
 browser that exposes the API. Ordinary browsing, search, and booking links work without it.
 No origin-trial token or browser flag is installed/configured by this change.
 
+Public documentation at `/webmcp/` and `/en/webmcp/` is readable without inspecting a JS bundle.
+`/webmcp.json` publishes schemas generated from the same tool definitions. These resources are
+documentation, not a discovery protocol or remote MCP endpoint, and do not enable an unsupported
+browser or bypass an agent's tool restrictions.
+
 API verified on 2026-10-11 against Chrome's [overview](https://developer.chrome.com/docs/ai/webmcp)
 (updated October 7) and [imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api).
 Registrations use an AbortSignal, not an obsolete navigator API or unregisterTool.
@@ -30,9 +35,10 @@ existing SEO prose extractor: HTML, fenced examples, inline code and diagrams ar
 The common read model in `src/lib/public-content/access.ts` takes explicit data dependencies. Its
 server adapter reuses the public Markdown collection, editorial visibility metadata, localized tag
 dictionary and existing Postgres search. Candidate slugs are filtered by publication, language and
-tag **before** the full-text limit. Empty full-text results (including older file-backed EN content
-with no English vector), or an unconfigured preview DB, use literal AND matching on prose/title/tags;
-`searchMode` states `full_text`, `literal` or `latest`. Literal mode has no stemming or advanced query
+tag **before** the full-text limit. Current prose/title/tags supplement incomplete vectors using
+literal AND matching; ranked results stay first and duplicates are removed before pagination.
+`searchMode` states `full_text`, `full_text_with_literal_fallback`, `literal` or `latest`.
+An unconfigured preview DB uses literal matching. Literal mode has no stemming or advanced query
 syntax. A configured DB failure returns 503, rather than bypassing hidden content.
 
 The browser adapter calls same-origin, read-only GET routes under `/api/public/articles/{search,read,topics}/`.

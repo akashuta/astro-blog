@@ -36,7 +36,11 @@ const tagline = locale === "en" ? "notes from production" : "записки из
 
 <header class="site-header" role="banner" data-site-header>
   <div class="site-header__inner">
-    <a href={homeHref} class="site-header__brand" aria-label={t(locale, "nav.home")}>
+    <a
+      href={homeHref}
+      class="site-header__brand"
+      aria-label={`artka.dev — ${tagline} — ${t(locale, "nav.home")}`}
+    >
       <span class="site-header__lockup">artka.dev<sup aria-hidden="true">&#174;</sup></span>
       <span class="site-header__tagline">{tagline}</span>
     </a>

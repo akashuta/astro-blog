@@ -43,7 +43,7 @@ faq:
       nonexistent nested path. The form ./09-subagents is handled by link-canonicalization plugins, while the
       bare form can slip past the checks.
 pubDate: 2026-09-19
-updatedDate: 2026-10-03
+updatedDate: 2026-10-11
 tags:
   - seo
   - astro
@@ -53,12 +53,14 @@ tags:
 cover: /og-default.png
 coverAlt: artka.dev, technical blog
 lang: en
-sourceHash: 5f2db6dcd5b8a7130346d0290311fa580b072fa6308f1018be6c477f25a4980d
+sourceHash: 9c9c319c899197e341e509187140eb0357aa1fb5483ae6a49b523471a19012ae
 manuallyEdited: true
 draft: false
 ---
 
 > On September 19, 2026, Search Console reported 8 indexed pages and 177 non-indexed pages for artka.dev. Of those, 112 were in the "crawled, currently not indexed" state. Sitemaps had been processed successfully, all 70 addresses in them returned 200, every checked page had crawling allowed, and the canonical address matched Google's selected one. I took the site apart piece by piece and found three real bugs, one of them living inside a link-processing plugin. These findings did not establish the precise cause of the 112 pages' exclusion from the index.
+
+> October 11, 2026 update: the Claude Code course was deliberately removed on October 10. Its pages, Markdown twins, and legacy lesson addresses now terminate with `410 Gone`; the lesson recovery and `301 → 200` results below describe an earlier deployment. The surviving article Markdown twins are crawlable and send `X-Robots-Tag: noindex` plus `Link: <HTML article URL>; rel="canonical"`. The sample addresses and September figures remain as a record of that investigation; this article contains no new Search Console results.
 
 ---
 
@@ -157,9 +159,9 @@ With twenty articles and a page size of four, sixteen out of twenty are left wit
 
 ### 3.2. Forty addresses with the same text
 
-Every article and every lesson has a Markdown twin at the same address with a `.md` suffix, linked from the page header. The twins were served with a 200 status, `text/markdown` type, no `X-Robots-Tag`, and no canonical address. A comment in the route code claimed that the response header carried a canonical address; the function assembling that response only set the content type.
+At the time of the investigation, every article and every lesson had a Markdown twin at the same address with a `.md` suffix, linked from the page header. The twins were served with a 200 status, `text/markdown` type, no `X-Robots-Tag`, and no canonical address. A comment in the route code claimed that the response header carried a canonical address; the function assembling that response only set the content type.
 
-Around forty addresses carrying a full copy of the text. Since the files are served as static assets, you can't attach headers to them, and a rule in robots.txt turned out to be more practical: every AI agent has its own group in the file, so a disallow in the catch-all group closes the twins off for Google and Bing without touching the rest.
+Around forty addresses carrying a full copy of the text. Since the files were served as static assets, headers couldn't be attached to them, and a rule in robots.txt turned out to be more practical: every AI agent had its own group in the file, so a disallow in the catch-all group closed the twins off for Google and Bing without touching the rest.
 
 ### 3.3. The link-canonicalization plugin skipped the bare relative form
 
@@ -194,11 +196,11 @@ The difference between the two spellings of the same thing was arbitrary. A one-
 
 By then, thirty addresses had already spread through other people's links and the robot's memory, so alongside the plugin fix I added a recovery rule: if the last two segments of an address are both known lesson slugs, the appended tail is the actual target. One rule instead of enumerating every pair — which, with fourteen lessons and five prefix forms, comes to 980.
 
-The result on the live site: 27 of 30 addresses now reach the real page. The remaining three deliberately return 404, including `/terms`, which never existed. Redirecting a nonexistent page to something semantically similar is a soft 404, not a fix.
+The result of that deployment on the live site: 27 of 30 addresses reached the real page. The remaining three deliberately returned 404, including `/terms`, which never existed. Redirecting a nonexistent page to something semantically similar is a soft 404, not a fix. After the course was removed on October 10, its lesson addresses terminate with `410 Gone`.
 
 ### 3.4. What changed in the numbers
 
-All measurements were taken against the live site, before and after the deploy.
+These historical measurements were taken against the live site before and after the deployment described here, before the course was removed on October 10. The current Markdown-twin policy is described in the update at the start of the article.
 
 | Check                              | Before           | After                       |
 | ---------------------------------- | ---------------- | --------------------------- |

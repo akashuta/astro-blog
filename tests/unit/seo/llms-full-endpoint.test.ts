@@ -47,6 +47,40 @@ describe("buildLlmsFull", () => {
     expect(out.text.split("word2999")).toHaveLength(2);
     expect(out.text).toMatch(/Excerpt: word0 word1/);
   });
+
+  it("keeps a growing RU corpus within budget while retaining every article and twin URL", () => {
+    const input: LlmsInput = {
+      ruPosts: [post("ru", "large", 30_000), post("ru", "second", 200)],
+      enPosts: [post("en", "large", 30_000), post("en", "second", 200)],
+    };
+    const out = buildLlmsFull(input);
+    expect(out.bytes).toBeLessThanOrEqual(LLMS_FULL_BUDGET_BYTES);
+    expect(out.bytes).toBe(Buffer.byteLength(out.text, "utf8"));
+    expect(out.mode).toBe("excerpts");
+    expect(out.text).toContain("80-word excerpts of both languages");
+    expect(out.text).not.toContain("word29999");
+    for (const prefix of ["", "/en"]) {
+      for (const slug of ["large", "second"]) {
+        expect(out.text).toContain(`URL: https://artka.dev${prefix}/blog/${slug}/`);
+        expect(out.text).toContain(`Markdown: https://artka.dev${prefix}/blog/${slug}.md`);
+      }
+    }
+  });
+
+  it("falls back to an explicit URL index when even one multibyte excerpt is too large", () => {
+    const oversized = { ...post("ru", "unicode", 1), body: "контекст".repeat(30_000) };
+    const out = buildLlmsFull({ ruPosts: [oversized], enPosts: [oversized] }, 4 * 1024);
+    expect(out.bytes).toBeLessThanOrEqual(4 * 1024);
+    expect(out.mode).toBe("index");
+    expect(out.text).toContain("article URLs only; bodies and excerpts are omitted");
+    expect(out.text).toContain("Markdown: https://artka.dev/blog/unicode.md");
+    expect(out.text).toContain("Markdown: https://artka.dev/en/blog/unicode.md");
+    expect(out.text).not.toContain("контекст");
+  });
+
+  it("fails clearly when the budget cannot hold every article pointer", () => {
+    expect(() => buildLlmsFull(small, 100)).toThrow(/too small to list every article/);
+  });
 });
 
 describe("llms-full.txt endpoint", () => {
@@ -58,7 +92,9 @@ describe("llms-full.txt endpoint", () => {
     expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=3600");
     expect(response.headers.get("X-Robots-Tag")).toBe("noindex");
-    expect(["full", "en-excerpts"]).toContain(response.headers.get("X-Llms-Full-Mode"));
+    expect(["full", "en-excerpts", "excerpts", "index"]).toContain(
+      response.headers.get("X-Llms-Full-Mode"),
+    );
     expect(body).toContain("# artka.dev — full LLM digest");
     expect(body).toContain("## Author");
     expect(body).toContain("# Posts (Russian — source of truth)");
